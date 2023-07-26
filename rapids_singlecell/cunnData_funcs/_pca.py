@@ -168,8 +168,8 @@ class PCA_sparse:
         self.dtype = x.data.dtype
         gram_matrix = cp.zeros((x.shape[1], x.shape[1]), dtype=self.dtype)
 
-        block = (8,)
-        grid = (math.ceil(x.shape[0] / block[0]),)
+        block = (128,)
+        grid = (x.shape[0],)
 
         compute_mean_cov = _cov_kernel_sparse_xx(self.dtype)
         compute_mean_cov(
@@ -184,8 +184,15 @@ class PCA_sparse:
                 gram_matrix,
             ),
         )
-        gram_matrix = gram_matrix + gram_matrix.T
-        gram_matrix *= 1 / x.shape[0]
+        copy_gram = _warp_copy_kernel(x.data.dtype)
+        block = (32, 32)
+        grid = (math.ceil(x.shape[1] / block[0]), math.ceil(x.shape[1] / block[1]))
+        copy_gram(
+            grid,
+            block,
+            (gram_matrix, x.shape[1]),
+        )
+
         mean_x = x.sum(axis=0) * (1 / x.shape[0])
         cov_result = gram_matrix
 
@@ -244,25 +251,37 @@ class PCA_sparse:
 
 
 cov_kernel_str_sparse_xx = r"""
-(const int *indptr, const int *index, {0} *data, int nrows, int ncols, {0} *out) {
-    int row = blockDim.x * blockIdx.x + threadIdx.x;
-    if(row >= nrows) return;
-    int start_idx = indptr[row];
-    int stop_idx = indptr[row+1];
+(const int *indptr,const int *index, {0} *data,int nrows,int ncols, {0}  * out) {
+    int row = blockIdx.x;
+    int col = threadIdx.x;
 
-    for(int idx = start_idx; idx < stop_idx; idx++){
-        int index1 = index[idx];
-        {0} data1 = data[idx];
-        long long int outidx = \
-            static_cast<long long int>(index1) * ncols + index1;
-        atomicAdd(&out[outidx], data1 * data1 / 2);
-        for(int idx2 = idx+1; idx2 < stop_idx; idx2++){
+    if (row >= nrows) return;
+
+    int start = indptr[row];
+    int end = indptr[row + 1];
+
+    for (int idx1 = start; idx1 < end; idx1++)
+    {
+        int index1 = index[idx1];
+        {0} data1 = data[idx1];
+        for(int idx2 = idx1+col; idx2 < end; idx2 += blockDim.x){
             int index2 = index[idx2];
             {0} data2 = data[idx2];
-            long long int outidx2 = \
-                static_cast<long long int>(index1) * ncols + index2;
-            atomicAdd(&out[outidx2], data1 * data2);
+            atomicAdd(&out[index1*ncols+index2], data1*data2);
         }
+    }
+}
+"""
+
+copy_kernel = r"""
+({0} *out, int ncols) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row >= ncols || col >= ncols) return;
+
+    if (row > col) {
+        out[row*ncols+col] = out[col*ncols+row]; // Copy the upper triangle to the lower triangle
     }
 }
 """
@@ -285,6 +304,10 @@ def _cov_kernel_sparse_xx(dtype):
     return cuda_kernel_factory(
         cov_kernel_str_sparse_xx, (dtype,), "cov_kernel_sprase_xx"
     )
+
+
+def _warp_copy_kernel(dtype):
+    return cuda_kernel_factory(copy_kernel, (dtype,), "_copy_kernel")
 
 
 def _cov_kernel(dtype):
