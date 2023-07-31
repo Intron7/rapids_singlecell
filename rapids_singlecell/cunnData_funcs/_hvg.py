@@ -4,14 +4,15 @@ import numpy as np
 import pandas as pd
 import math
 import warnings
-from typing import Optional
+from typing import Optional, Union
 
 from ..cunnData import cunnData
+from anndata import AnnData
 from ._utils import _check_nonnegative_integers, _get_mean_var
 
 
 def highly_variable_genes(
-    cudata: cunnData,
+    cudata: Union[cunnData, AnnData],
     layer: str = None,
     min_mean: float = 0.0125,
     max_mean: float = 3,
@@ -49,7 +50,7 @@ def highly_variable_genes(
     Parameters
     ----------
         cudata
-            cunnData object
+            cunnData, AnnData object
         layer
             If provided, use `cudata.layers[layer]` for expression values instead of `cudata.X`.
         min_mean

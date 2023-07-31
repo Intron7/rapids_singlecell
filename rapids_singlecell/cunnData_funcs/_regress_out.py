@@ -4,11 +4,13 @@ from cuml.linear_model import LinearRegression
 from rapids_singlecell.cunnData import cunnData
 from typing import Literal, Union, Optional
 from ..cunnData import cunnData
+from anndata import AnnData
 import math
+from ._utils import _check_gpu_X
 
 
 def regress_out(
-    cudata: cunnData,
+    cudata: Union[cunnData, AnnData],
     keys: Union[str, list],
     layer: Optional[str] = None,
     inplace: bool = True,
@@ -22,7 +24,7 @@ def regress_out(
     Parameters
     ----------
         cudata
-            cunnData object
+            cunnData, AnnData object
 
         keys
             Keys for numerical observation annotation on which to regress on.
@@ -52,6 +54,9 @@ def regress_out(
         raise ValueError("batchsize must be `int`, `None` or `'all'`")
 
     X = cudata.layers[layer] if layer is not None else cudata.X
+
+    if isinstance(cudata, AnnData):
+        _check_gpu_X(X)
 
     if cpx.scipy.sparse.issparse(X) and not cpx.scipy.sparse.isspmatrix_csc(X):
         X = X.tocsc()
@@ -109,6 +114,12 @@ def regress_out(
             outputs[:, i] = _regress_out_chunk(regressors, y)
 
     if inplace:
+        if isinstance(cudata, AnnData):
+            if cudata.is_view:
+                if layer:
+                    del cudata.layers[layer]
+                else:
+                    del cudata.X
         if layer:
             cudata.layers[layer] = outputs
         else:

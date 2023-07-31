@@ -1,10 +1,12 @@
 import cupy as cp
 from ..cunnData import cunnData
-from typing import Optional
+from anndata import AnnData
+from typing import Optional, Union
+from ._utils import _check_gpu_X
 
 
 def scale(
-    cudata: cunnData,
+    cudata: Union[cunnData, AnnData],
     max_value: Optional[int] = None,
     layer: Optional[str] = None,
     inplace: bool = True,
@@ -15,7 +17,7 @@ def scale(
     Parameters
     ----------
         cudata
-            cunnData object
+            cunnData, AnnData object
 
         max_value
             After scaling matrix to unit variance, values will be clipped to this number of std deviations.
@@ -34,7 +36,10 @@ def scale(
     """
     X = cudata.layers[layer] if layer is not None else cudata.X
 
-    if type(X) is not cp._core.core.ndarray:
+    if isinstance(cudata, AnnData):
+        _check_gpu_X(X)
+
+    if not isinstance(X, cp.ndarray):
         print("densifying _.X")
         X = X.toarray()
     else:

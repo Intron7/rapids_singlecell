@@ -5,7 +5,36 @@ import warnings
 from typing import Optional
 
 from ..cunnData import cunnData
-from ._utils import _check_nonnegative_integers
+from ._utils import _check_nonnegative_integers, _check_gpu_X
+from cuml.common.kernel_utils import cuda_kernel_factory
+
+
+_mul_kernel = r"""
+(const int *indptr, {0} *data,
+                    int nrows, int tsum) {
+        int row = blockDim.x * blockIdx.x + threadIdx.x;
+
+        if(row >= nrows)
+            return;
+
+        {0} scale = 0.0;
+        int start_idx = indptr[row];
+        int stop_idx = indptr[row+1];
+
+        for(int i = start_idx; i < stop_idx; i++)
+            scale += data[i];
+
+        if(scale > 0.0) {
+            scale = tsum / scale;
+            for(int i = start_idx; i < stop_idx; i++)
+                data[i] *= scale;
+        }
+    }
+"""
+
+
+def _mul_kernel_csr(dtype):
+    return cuda_kernel_factory(_mul_kernel, (dtype,), "_mul_kernel")
 
 
 def normalize_total(
@@ -40,33 +69,7 @@ def normalize_total(
     if not inplace:
         csr_arr = csr_arr.copy()
 
-    mul_kernel = cp.RawKernel(
-        r"""
-        extern "C" __global__
-        void mul_kernel(const int *indptr, float *data,
-                        int nrows, int tsum) {
-            int row = blockDim.x * blockIdx.x + threadIdx.x;
-
-            if(row >= nrows)
-                return;
-
-            float scale = 0.0;
-            int start_idx = indptr[row];
-            int stop_idx = indptr[row+1];
-
-            for(int i = start_idx; i < stop_idx; i++)
-                scale += data[i];
-
-            if(scale > 0.0) {
-                scale = tsum / scale;
-                for(int i = start_idx; i < stop_idx; i++)
-                    data[i] *= scale;
-            }
-        }
-        """,
-        "mul_kernel",
-    )
-
+    mul_kernel = _mul_kernel_csr(csr_arr.dtype)
     mul_kernel(
         (math.ceil(csr_arr.shape[0] / 32.0),),
         (32,),

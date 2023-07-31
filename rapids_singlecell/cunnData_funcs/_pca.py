@@ -194,6 +194,7 @@ class PCA_sparse:
         )
 
         mean_x = x.sum(axis=0) * (1 / x.shape[0])
+        gram_matrix *= 1 / x.shape[0]
         cov_result = gram_matrix
 
         compute_cov = _cov_kernel(self.dtype)
