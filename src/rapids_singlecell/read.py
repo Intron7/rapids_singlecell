@@ -1,16 +1,18 @@
 from typing import Literal
-from anndata import AnnData
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+from anndata import AnnData
+
 
 def read_mtx(
-    filename, 
-    backend: Literal['cudf', 'dask_cudf'] = "cudf",
-    output: Literal['CPU', 'GPU'] = "CPU",
+    filename,
+    backend: Literal["cudf", "dask_cudf"] = "cudf",
+    output: Literal["CPU", "GPU"] = "CPU",
 ):
     """
     Read mtx using using GPU, the matrix is transposed by default
-    
+
     Parameters
     ----------
     filename
@@ -20,8 +22,8 @@ def read_mtx(
     output
         Where to keep the matrix, either keep to the GPU memory, or send it to RAM.
     """
-    import scipy.sparse as sp
     import cupyx.scipy.sparse as csp
+    import scipy.sparse as sp
 
     mtxinfo = pd.read_csv(filename, nrows=1, sep=" ", comment="%", header=None).values[
         0
@@ -34,7 +36,7 @@ def read_mtx(
         mtx_data = cudf.read_csv(
             filename,
             sep=" ",
-            dtype=['float32' for i in range(3)],
+            dtype=["float32" for i in range(3)],
             comment="%",
             header=None,
             skiprows=2,
@@ -54,11 +56,12 @@ def read_mtx(
 
     elif backend == "dask_cudf":
         import dask_cudf
+
         output = "CPU"
         mtx_data = dask_cudf.read_csv(
             filename,
             sep=" ",
-            dtype=['float32' for i in range(3)],
+            dtype=["float32" for i in range(3)],
             comment="%",
             header=None,
         )
